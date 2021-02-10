@@ -1,0 +1,239 @@
+#!/usr/bin/env bash
+# ---------------------------------------------------------------------------------------- #
+# Description                                                                              #
+# ---------------------------------------------------------------------------------------- #
+# This script act as a git hook multiplexer allowing you to run multiple scripts / stages  #
+# from a single hook.                                                                      #
+# ---------------------------------------------------------------------------------------- #
+
+# space-separated list of supported hooks
+SUPPORTED_HOOKS='pre-commit prepare-commit-msg commit-msg post-commit'
+
+# what hook was invoked
+HOOK_NAME=$(basename "$0")
+
+# Work out the root of the repo
+REPO_ROOT=$(r=$(git rev-parse --git-dir) && r=$(cd "$r" && pwd)/ && cd "${r%%/.git/*}" && pwd)
+
+# Where do we find the hooks
+HOOKS_DIR="${REPO_ROOT}/hooks"
+
+# Total scripts executed
+total_count=0
+
+# How many failed?
+fail_count=0
+
+# How many were skipped
+skip_count=0
+
+# Catch anything from stdin to pass to the child scripts
+# NOTE: Ensure it is quoted when used as the original IFS might have been different!
+stdin=$(cat)
+
+# Some internal constants to try to make the output pretty-ish
+WIDTH=120
+RED=$(tput setaf 1)
+YELLOW=$(tput setaf 3)
+GREEN=$(tput setaf 2)
+CYAN=$(tput setaf 6)
+BOLD=$(tput bold)
+OFF=$(tput sgr0)
+
+EXIT_SUCCESS=0
+EXIT_FAILURE=1
+
+# ---------------------------------------------------------------------------------------- #
+# Run Pre Checks                                                                           #
+# ---------------------------------------------------------------------------------------- #
+# Run some basic checks to make sure everything looks right.                               #
+# ---------------------------------------------------------------------------------------- #
+
+function run_pre_checks()
+{
+    if [[ ! -d "${HOOKS_DIR}" ]]; then
+       warn "The hook directory ${HOOKS_DIR} doesn't exist - skipping"
+       exit ${EXIT_SUCCESS}
+    fi
+
+    if [[ -z "$(ls -A "${HOOKS_DIR}")" ]]; then
+       warn "There are no hooks configured for ${HOOK_NAME} - skipping"
+       exit ${EXIT_SUCCESS}
+    fi
+}
+
+# ---------------------------------------------------------------------------------------- #
+# Process Hooks                                                                            #
+# ---------------------------------------------------------------------------------------- #
+# Process the external hook scripts, output errors and handle counts etc.                  #
+# ---------------------------------------------------------------------------------------- #
+
+function process_hooks()
+{
+    HOOKS_DIR="${HOOKS_DIR}/${HOOK_NAME}"
+    local CURRENT_HOOK
+
+    draw_line
+    center_text "Executing ${HOOK_NAME} hooks"
+
+    run_pre_checks
+
+    while read -r HOOK; do
+        HOOK="$(readlink -e "${HOOK}")"
+        CURRENT_HOOK=$(basename "${HOOK}") 
+
+        draw_line
+        total_count=$((total_count + 1))
+
+        if [[ ! -x "${HOOK}" ]]; then
+            warn "${CURRENT_HOOK} is not executable - skipping"
+            skip_count=$((skip_count + 1))
+            continue; 
+        fi
+
+        info "Running ${CURRENT_HOOK} ..."
+
+        # Invoke each found hook with identical
+        # standard input and arguments as we were
+        # called with.
+        if ! echo "${stdin}" | "${HOOK}" "$@"; then
+            fail_count=$((fail_count + 1))
+            fail "${CURRENT_HOOK}"
+        else
+            success "${CURRENT_HOOK}"
+        fi
+    done < <(find "${HOOKS_DIR}" -type f -maxdepth 1 -print | sort)
+}
+
+# -------------------------------------------------------------------------------- #
+# Success                                                                          #
+# -------------------------------------------------------------------------------- #
+# Show the user a success message.                                                 #
+# -------------------------------------------------------------------------------- #
+function success()
+{
+    local message="${1:-}"
+
+    if [[ -n "${message}" ]]; then
+        printf '[ %s%sSuccess%s ] %s\n' "${BOLD}" "${GREEN}" "${OFF}" "${message}"
+    fi
+}
+
+# -------------------------------------------------------------------------------- #
+# Warn                                                                             #
+# -------------------------------------------------------------------------------- #
+# Show the user a warning message.                                                 #
+# -------------------------------------------------------------------------------- #
+function warn()
+{
+    local message="${1:-}"
+
+    if [[ -n "${message}" ]]; then
+        printf '[ %s%sWarning%s ] %s\n' "${BOLD}" "${YELLOW}" "${OFF}" "${message}"
+    fi
+}
+
+# -------------------------------------------------------------------------------- #
+# Fail                                                                             #
+# -------------------------------------------------------------------------------- #
+# Show the user a failure message.                                                 #
+# -------------------------------------------------------------------------------- #
+function fail()
+{
+    local message="${1:-}"
+
+    if [[ -n "${message}" ]]; then
+        printf '[ %s%sFail%s ] %s\n' "${BOLD}" "${RED}" "${OFF}" "${message}"
+    fi
+}
+
+# -------------------------------------------------------------------------------- #
+# Info                                                                             #
+# -------------------------------------------------------------------------------- #
+# Show the user an information message.                                            #
+# -------------------------------------------------------------------------------- #
+function info()
+{
+    local message="${1:-}"
+
+    if [[ -n "${message}" ]]; then
+        printf '[ %s%sInfo%s ] %s\n' "${BOLD}" "${CYAN}" "${OFF}" "${message}"
+    fi
+}
+
+# -------------------------------------------------------------------------------- #
+# Center Text                                                                      #
+# -------------------------------------------------------------------------------- #
+# Center some text on the screen.                                                  #
+# -------------------------------------------------------------------------------- #
+function center_text()
+{
+    textsize=${#1}
+    span=$((("${WIDTH}" + textsize) / 2))
+
+    printf '%*s\n' "${span}" "$1"
+}
+
+# -------------------------------------------------------------------------------- #
+# Draw Line                                                                        #
+# -------------------------------------------------------------------------------- #
+# Draw a line on the screen.                                                       #
+# -------------------------------------------------------------------------------- #
+function draw_line()
+{
+    local start=$'\e(0' end=$'\e(B' line='qqqqqqqqqqqqqqqq'
+
+    while ((${#line} < "${WIDTH}"));
+    do
+        line+="$line";
+    done
+    printf '%s%s%s\n' "$start" "${line:0:WIDTH}" "$end"
+}
+
+# -------------------------------------------------------------------------------- #
+# Give Report                                                                      #
+# -------------------------------------------------------------------------------- #
+# Give a little status report at the end of the run.                               #
+# -------------------------------------------------------------------------------- #
+function give_report
+{
+    local status
+
+    [[ $fail_count -gt 0 ]] && status='Failed' || status='Passed'
+
+    draw_line
+    center_text "Total Scripts: ${total_count}, Skipped: ${skip_count}, Failed: ${fail_count}, Status: ${status}"
+    draw_line
+}
+
+# ---------------------------------------------------------------------------------------- #
+# Main()                                                                                   #
+# ---------------------------------------------------------------------------------------- #
+# The main function where all of the heavy lifting and script config is done.              #
+# ---------------------------------------------------------------------------------------- #
+function main()
+{
+    if [[ $SUPPORTED_HOOKS =~ $HOOK_NAME ]]; then
+        process_hooks "${@}"
+        give_report
+    else
+        fail "Invalid hook ${HOOK_NAME} - aborting"
+    fi
+
+    [[ $fail_count -gt 0 ]] && exit ${EXIT_FAILURE} || exit ${EXIT_SUCCESS}
+}
+
+# ---------------------------------------------------------------------------------------- #
+# Main()                                                                                   #
+# ---------------------------------------------------------------------------------------- #
+# The actual 'script' and the functions/sub routines are called in order.                  #
+# ---------------------------------------------------------------------------------------- #
+
+main "${@}"
+
+# ---------------------------------------------------------------------------------------- #
+# End of Script                                                                            #
+# ---------------------------------------------------------------------------------------- #
+# This is the end - nothing more to see here.                                              #
+# ---------------------------------------------------------------------------------------- #
+
