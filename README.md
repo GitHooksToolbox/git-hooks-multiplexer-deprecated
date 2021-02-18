@@ -45,12 +45,12 @@ With that in mind we have developed a simple multiplexer script. This script wil
 
 You install the multiplexer as the required git hook, and when the hook fires it will then run all of the defined scripts in sequence for you.
 
-Using a pre-commit hook as an example, set the multiplexer to run as your pre-commit hook (see the section on `intalling the multiplexer`), and when you execute a `git commit` command the pre-commit hook will fire (be execute).
+Using a pre-commit hook as an example, set the multiplexer to run as your pre-commit hook (see the section on `installing the multiplexer`), and when you execute a `git commit` command the pre-commit hook will fire (be execute).
 
 The multipler will then look in the following location for the actual real scripts to execute:
 
 ```shell
-GIT_ROOT/hooks/pre-commit
+${GIT_ROOT}/hooks/pre-commit
 ```
 
 > If you install the multiplexer as a post-commit hook it will look for GIT_ROOT/hooks/post-commit instead etc. for any supported hook.
