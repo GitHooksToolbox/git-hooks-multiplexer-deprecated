@@ -7,7 +7,9 @@ This changelog was automatically generated using [Caretaker](https://github.com/
 
 ### [Unreleased](https://github.com/GitToolbox/git-hook-multiplexer/compare/v0.1.2...HEAD)
 
-- Update rvm version in tests [`[head]`](https://github.com/GitToolbox/git-hook-multiplexer/commit/)
+- Fix travis -> slack integration [`[head]`](https://github.com/GitToolbox/git-hook-multiplexer/commit/)
+
+- Update rvm version in tests [`[493819c]`](https://github.com/GitToolbox/git-hook-multiplexer/commit/493819ccdaf942680067c411cea33c3c9295d49e)
 
 ### [v0.1.1](https://github.com/GitToolbox/git-hook-multiplexer/compare/v0.1.0...v0.1.1)
 
